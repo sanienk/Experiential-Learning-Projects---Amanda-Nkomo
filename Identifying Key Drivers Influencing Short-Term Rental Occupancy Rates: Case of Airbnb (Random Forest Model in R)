@@ -1,0 +1,171 @@
+### LOADING DATA AND PACKAGES 
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+library(dplyr); library(ggplot2);library(tidyr); library(caret); library(caTools); library(randomForest); library(party);library(rpart);library(rpart.plot);library(forecast);library(readxl)
+```
+
+```{r, message=FALSE, warning=FALSE}
+airbnb.df <- read_excel("C:/Users/Capstone/AIRBNB_DATA/Cluster Analysis/airbnb.df.xlsx")
+amenities.df  <- read_excel("C:/Users/Capstone/AIRBNB_DATA/Cluster Analysis/amenities.df.xlsx")
+```
+
+### CONVERTING VARIABLES 
+```{r, message=FALSE, warning=FALSE}
+airbnb.df$city <- as.factor(airbnb.df$city)
+airbnb.df$host_response_time <- as.factor(airbnb.df$host_response_time)
+airbnb.df$host_has_profile_pic <- as.factor(airbnb.df$host_has_profile_pic)
+airbnb.df$host_identity_verified <- as.factor(airbnb.df$host_identity_verified)
+airbnb.df$host_is_superhost <-as.factor(airbnb.df$host_is_superhost)
+airbnb.df$room_type <- as.factor(airbnb.df$room_type)
+airbnb.df$bedrooms <- as.factor(airbnb.df$bedrooms)
+airbnb.df$beds <- as.factor(airbnb.df$beds)
+airbnb.df$bathrooms <- as.factor(airbnb.df$bathrooms)
+airbnb.df$accommodates <- as.factor(airbnb.df$accommodates)
+```
+
+```{r, message=FALSE, warning=FALSE}
+data <- cbind(airbnb.df, amenities.df)
+```
+
+### PRICE (Log)
+```{r}
+data <- data[data$price <= 750, ]
+data <- data[data$price >= 50, ]
+```
+```{r}
+data$log_price <- log(data$price)
+```
+
+### OCCUPANCY RATE (Percentage)
+
+```{r}
+data$occupancy_rate <- round(((30-data$availability_30)/30)*100,2)
+```
+
+#### Dimension Reduction
+```{r}
+data <- data[, c("city","price","log_price","host_response_time","host_response_rate","host_acceptance_rate","host_is_superhost", "host_listings_count","host_has_profile_pic","host_identity_verified","room_type","accommodates","minimum_nights","number_of_reviews","review_scores_value","instant_bookable","reviews_per_month","amenities_count","essentials","kitchen","microwave","patio","refrigerator","video_games","wifi","cleaning","fan","fenced","furniture","glasses","laundromat","blinds","tables","wine","grill","firepit","utensils","fireplace","pool","pool","chairs","loungers","staff","occupancy_rate")]
+```
+
+```{r}
+dim(data)
+```
+
+
+### DATA PARTITIONING
+```{r}
+set.seed(123)
+spl = sample.split(data$occupancy_rate, SplitRatio = 0.7)
+Train = subset(data, spl==TRUE)
+Train = Train[,3:ncol(Train)]
+Test = subset(data, spl==FALSE)
+Test = Test[,3:ncol(Test)]
+```
+
+### MODEL FORMULATION
+```{r}
+Model1 = randomForest(occupancy_rate ~ ., data = Train, ntree=200, nodesize=25 )
+```
+
+
+### PREDICTIONS
+```{r, message=FALSE, warning=FALSE}
+PredictForest = predict(Model1, newdata = Test)
+```
+```{r, message=FALSE, warning=FALSE}
+Test$PredictForest <- PredictForest
+```
+
+```{r, message=FALSE, warning=FALSE}
+residuals <-  Test$occupancy_rate - Test$PredictForest
+hist(residuals, breaks = "FD", main="Distribution of Residuals", xlab="Occupancy Rates", col = 'red')
+```
+
+### FEATURE IMPORTANCE
+```{r, message=FALSE, warning=FALSE}
+Feature_importance <- importance(Model1)
+print(Feature_importance)
+```
+
+
+### MODEL PERFORMANCE EVALUATION
+***Mean Squared Error (MSE)***
+```{r, message=FALSE, warning=FALSE}
+mse_Forest <- mean((Test$occupancy_rate - Test$PredictForest)^2)
+```
+```{r, echo=FALSE}
+cat("Mean Squared Error:", mse_Forest, "\n")
+```
+
+***R-squared (R2)***
+```{r, message=FALSE,warning=FALSE, echo=FALSE}
+r2_Forest <- 1 - (mse_Forest / var(Test$occupancy_rate))
+```
+```{r, echo=FALSE}
+cat("R-squared:", r2_Forest, "\n")
+```
+
+***Mean Absolute Error (MAE)***
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+mae_Forest <- mean(abs(Test$occupancy_rate - Test$PredictForest))
+```
+```{r, echo=FALSE}
+cat("Mean Absolute Error:", mae_Forest, "\n")
+```
+
+***Root Mean Squared Error (RMSE)***
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+rmse_Forest <- sqrt(mse_Forest)
+```
+```{r, echo=FALSE}
+cat("Root Mean Squared Error:", rmse_Forest, "\n")
+```
+
+
+#### BASELINE PREDICTIONS 
+```{r, message=FALSE, warning=FALSE}
+mean_occupancy_rate <- mean(Train$occupancy_rate)
+baseline_pred <- rep(mean_occupancy_rate, nrow(Test))
+```
+
+***Mean Squared Error (MSE) BASELINE***
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+mse_baseline <- mean((Test$occupancy_rate - baseline_pred)^2)
+```
+```{r, echo=FALSE}
+cat("Mean Squared Error - Baseline Model:", mse_baseline, "\n")
+```
+
+***Mean Absolute Error (MAE) BASELINE***
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+mae_baseline <- mean(abs(Test$occupancy_rate - baseline_pred))
+```
+```{r, echo=FALSE}
+cat("Mean Absolute Error - Baseline Model:", mae_baseline, "\n")
+```
+
+***Root Mean Squared Error (RMSE) BASELINE***
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+rmse_baseline <- sqrt(mean((Test$occupancy_rate - baseline_pred)^2))
+```
+```{r, echo=FALSE}
+cat("Root Mean Squared Error - Baseline Model :", rmse_baseline, "\n")
+```
+
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+plot_data <- data.frame(
+  Actual = Test$occupancy_rate,
+  Baseline_Prediction = baseline_pred,
+  RandomForest_Prediction = Test$PredictForest
+)
+
+ggplot(plot_data, aes(x = Actual)) +
+  geom_point(aes(y = Baseline_Prediction), color = "blue", alpha = 0.5, size = 3) +
+  geom_point(aes(y = RandomForest_Prediction), color = "black", alpha = 0.5, size = 3) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red") +
+  labs(title = "Predicted vs Actual",
+       x = "Actual Occupancy Rate",
+       y = "Predicted Occupancy Rate") +
+  scale_color_manual(values = c("blue", "black"), name = "Model")
+```
+
