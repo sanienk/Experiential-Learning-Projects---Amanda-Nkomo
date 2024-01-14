@@ -1,0 +1,301 @@
+# E-Commerce Cosmetic Store (October 2019)
+
+```{r, echo=FALSE}
+data1 <- read.csv("C:/Users/Data Mining/Project/2019-Oct.csv/2019-Oct.csv")
+```
+```{r}
+head(data1)
+```
+
+```{r}
+dim(data1)
+```
+### 4,102,283 Observations and 9 Variables
+
+
+Checking for Missing Values:
+```{r}
+data1[data1 == ""] <- NA
+colSums(is.na(data1))
+```
+
+Trends in the data:
+```{r}
+is.ts(data1)
+```
+### Checking Data Types:
+```{r}
+str(data1)
+```
+
+### Data Summary: Outliers in Price Variable
+```{r}
+summary(data1$price)
+```
+```{r}
+boxplot(data1$price)
+```
+```{r}
+hist(data1$price,breaks = "FD",xlab="Price",main="Price", col="blue")
+```
+
+### Distribution of Price when Log transformations are applied
+```{r}
+hist(log(data1$price),breaks="FD",xlab = "Price", main="Price", col ="blue")
+```
+
+### Most Frequent brand,price,user,category,product id:
+
+```{r}
+names(which.max(table(data1$user_id)))
+```
+```{r}
+names(which.max(table(data1$brand)))
+```
+```{r}
+names(which.max(table(data1$product_id)))
+```
+```{r}
+names(which.max(table(data1$price)))
+```
+```{r}
+names(which.max(table(data1$category_id)))
+```
+
+
+# Missing Values
+
+### Dropping Variable:Category Code:
+```{r}
+data2 <- data1[,-5]
+names(data2)
+```
+
+## Dropping Missing values in Brand
+```{r}
+data2 <- data2 %>% drop_na(brand)
+```
+
+
+## Dropping Missing values in User_session
+```{r}
+data2 <- data2 %>% drop_na(user_session)
+dim(data2)
+```
+
+## Droping observations with price = $0.00
+```{r}
+data2 <- data2 %>% filter(price != 0)
+dim(data2)
+```
+# Sampled Dataet
+```{r}
+set.seed(123)
+n_samples <- 100000
+sampled_data <- data2[sample(nrow(data2), n_samples, replace = FALSE), ]
+dim(sampled_data)
+```
+
+
+# Balancing Dataset
+```{r}
+event_type_counts <- sampled_data%>% group_by(event_type) %>% summarize(n = n())
+event_type_counts
+```
+
+```{r}
+ggplot(data = event_type_counts, aes(x = event_type, y = n)) +
+  geom_bar(stat = "identity", fill = "blue") +
+  labs(x = "Event Type", y = "Frequency", title = "Event Type") 
+```
+#### Since we want to predict purchase
+```{r}
+purchase_count <- min(event_type_counts$n)
+purchase_count
+```
+###  Subset the dataset  to include only have length of purchase rows for each event_type
+```{r}
+library(dplyr)
+data3 <- data2 %>% 
+  group_by(event_type) %>% 
+  sample_n(purchase_count) %>% 
+  ungroup()
+```
+
+### Counts for each event type after balancing the dataset
+```{r}
+balancedata_counts <- data3 %>% group_by(event_type) %>% summarize(n = n())
+balancedata_counts
+```
+### Dimension of Balanced Dataset
+```{r}
+dim(data3)
+```
+# Creating Dummy Variables
+```{r}
+data3$event_time <- as.date(data3$event_time)
+```
+
+```{r}
+library(fastDummies)
+data3$event_type <- as.factor(data3$event_type)
+```
+```{r}
+library(fastDummies)
+df_dummies <- fastDummies::dummy_cols(data3$event_type)
+head(df_dummies)
+dim(df_dummies)
+```
+```{r}
+set.seed(125)
+n_samples <- 250000
+sampled_data <- df[sample(nrow(df), n_samples, replace = FALSE), ]
+dim(sampled_data)
+```
+
+
+## DATA PARTITIONING
+### TRANING 60%
+```{r}
+training.rows <- sample(rownames(sampled_data), dim(sampled_data)[1]*0.6)
+training.df <- sampled_data[training.rows, ]
+dim(training.df)
+```
+### VALIATION 40%
+```{r}
+validation.rows <- sample(setdiff(rownames(sampled_data), training.rows),
+dim(sampled_data)[1]*0.4)
+validation.df <- sampled_data[validation.rows, ]
+dim(validation.df)
+```
+## BALANCING DATA
+
+
+### Cart
+```{r}
+balanced_cart <- ovun.sample(cart ~ ., data = training.df, method = "over",N=250000)$data
+prop.table(table(balanced_cart$cart))
+```
+### Purchase
+```{r}
+balanced_purchase <- ovun.sample(purchase ~ ., data = training.df, method = "over",N=250000)$data
+prop.table(table(balanced_purchase$purchase))
+```
+### Remove
+```{r}
+balanced_remove <- ovun.sample(remove_from_cart ~ ., data = training.df, method = "over",N=250000)$data
+prop.table(table(balanced_remove$remove_from_cart))
+```
+
+# **LOGISTIC REGRESSION**
+
+## **Model-View to Cart**:
+```{r}
+model_view_to_cart <- glm(cart ~ Big_Brand+Popular_Product+price+day+hour , data = balanced_cart, family = "binomial")
+summary(model_view_to_cart)
+```
+
+
+```{r}
+round(data.frame(summary(model_view_to_cart)$coefficients, odds = exp(coef(model_view_to_cart))),5)
+```
+
+```{r}
+view_cart.pred <- predict(model_view_to_cart, data=validation.df$cart, type = "response")
+data.frame(actual = validation.df$cart[1:5], predicted = view_cart.pred[1:5])
+```
+Accuracy
+```{r}
+
+validation.df$predict_view_to_cart <- predict(model_view_to_cart, newdata = validation.df, type = "response")
+
+validation.df$predicted_cart <- ifelse(validation.df$predict_view_to_cart >= 0.60, 1, 0)
+
+accuracy <- sum(validation.df$predicted_cart == validation.df$cart) / nrow(validation.df)
+
+print(paste0("Accuracy: ", round(accuracy * 100, 2), "%"))
+```
+
+```{r, warning=FALSE, message=FALSE}
+
+roc_obj <- roc(validation.df$cart, validation.df$predict_view_to_cart)
+optimal_cut <- coords(roc_obj, "best", ret="threshold", transpose = TRUE)
+cat("Optimal cut-off point:", optimal_cut, "\n")
+```
+
+```{r}
+confusionMatrix(as.factor(ifelse(validation.df$predict_view_to_cart>0.60, '1', '0')), as.factor(validation.df$cart))
+```
+
+
+## **Model-Cart to Purchase**:
+
+```{r}
+model_cart_to_purchase <- glm(purchase ~ Big_Brand+Popular_Product+price+day+hour, data = balanced_purchase, family = binomial (link = "logit"))
+summary(model_cart_to_purchase)
+```
+
+```{r}
+round(data.frame(summary(model_cart_to_purchase)$coefficients, odds = exp(coef(model_cart_to_purchase))),5)
+```
+```{r}
+cart_purcahse.pred <- predict(model_cart_to_purchase, validation.df[, -10], type = "response")
+data.frame(actual = validation.df$purchase[1:5], predicted = cart_purcahse.pred[1:5])
+```
+```{r}
+validation.df$predict_cart_to_purchase <- predict(model_cart_to_purchase, newdata = validation.df, type = "response")
+
+validation.df$predicted_purchase <- ifelse(validation.df$predict_cart_to_purchase >= 0.50, 1, 0)
+
+accuracy <- sum(validation.df$predicted_purchase == validation.df$purchase) / nrow(validation.df)
+
+print(paste0("Accuracy: ", round(accuracy * 100, 2), "%"))
+```
+
+```{r, warning=FALSE, message=FALSE}
+roc_obj <- roc(validation.df$purchase, validation.df$predict_cart_to_purchase)
+optimal_cut <- coords(roc_obj, "best", ret="threshold", transpose = TRUE)
+cat("Optimal cut-off point:", optimal_cut, "\n")
+```
+
+```{r}
+confusionMatrix(as.factor(ifelse(validation.df$predict_cart_to_purchase>0.50, '1', '0')), as.factor(validation.df$purchase))
+```
+
+
+## **Model-Cart to Remove_from_Cart**:
+
+```{r}
+model_cart_to_remove_cart <- glm(remove_from_cart ~ Big_Brand+Popular_Product+price+day+hour, data = balanced_remove, family = binomial (link = "logit"))
+summary(model_cart_to_remove_cart)
+```
+
+```{r}
+round(data.frame(summary(model_cart_to_remove_cart)$coefficients, odds = exp(coef(model_cart_to_remove_cart))),5)
+```
+```{r}
+cart_remove.pred <- predict(model_cart_to_remove_cart, validation.df[, -10], type = "response")
+data.frame(actual = validation.df$remove_from_cart[1:5], predicted = cart_remove.pred[1:5])
+```
+
+
+```{r}
+validation.df$predict_cart_to_remove_cart <- predict(model_cart_to_remove_cart, newdata = validation.df, type = "response")
+
+validation.df$predicted_remove <- ifelse(validation.df$predict_cart_to_remove_cart >= 0.55, 1, 0)
+
+accuracy <- sum(validation.df$predicted_remove == validation.df$remove_from_cart) / nrow(validation.df)
+
+print(paste0("Accuracy: ", round(accuracy * 100, 2), "%"))
+```
+
+```{r, warning=FALSE,message=FALSE}
+roc_obj <- roc(validation.df$remove_from_cart, validation.df$predict_cart_to_remove_cart)
+
+optimal_cut <- coords(roc_obj, "best", ret="threshold", transpose = TRUE)
+cat("Optimal cut-off point:", optimal_cut, "\n")
+```
+```{r}
+confusionMatrix(as.factor(ifelse(validation.df$predict_cart_to_remove_cart>0.55, '1', '0')), as.factor(validation.df$remove_from_cart))
+```
+
