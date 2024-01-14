@@ -1,0 +1,91 @@
+austin <- read.csv("C:/Users/Capstone/AIRBNB_DATA/Austin.csv")
+
+new_orleans <- read.csv("C:/Users/Capstone/AIRBNB_DATA/New Orleans.csv")
+
+new_york <- read.csv("C:/Users/Capstone/AIRBNB_DATA/New York.csv")
+
+san_fransico <- read.csv("C:/Users/Capstone/AIRBNB_DATA/San Fransico.csv")
+
+denver <- read.csv("C:/Users/Capstone/AIRBNB_DATA/Denver,Co.csv")
+```
+
+```{r, message=FALSE, warning=FALSE}
+combined_data <- rbind(austin,new_orleans, new_york, san_fransico, denver)
+```
+ 
+```{r, message=FALSE, warning=FALSE}
+combined_data <- combined_data[, !colnames(combined_data) %in% c('name', 'description','neighborhood_overview','host_about','neighbourhood_cleansed','neighbourhood','neighbourhood_group_cleansed','listing_url','picture_url','host_url','host_thumbnail_url','host_picture_url','scrape_id','last_scraped','source','calendar_last_scraped','license','neighbourhood_group_cleansed','latitude','longitude','calendar_updated','bathrooms','minimum_minimum_nights','maximum_minimum_nights','minimum_maximum_nights','maximum_maximum_nights','minimum_nights_avg_ntm','maximum_nights_avg_ntm','availability_60','availability_90','availability_365','calendar_last_scraped','calculated_host_listings_count','calculated_host_listings_count_entire_homes','calculated_host_listings_count_private_rooms','calculated_host_listings_count_shared_rooms','property_type','first_review','last_review')]
+```
+ 
+
+```{r, message=FALSE, warning=FALSE}
+combined_data <- combined_data[complete.cases(combined_data), ]
+```
+
+```{r, message=FALSE, warning=FALSE}
+data <- combined_data[combined_data$minimum_nights < 10, ]
+```
+
+
+```{r, message=FALSE, warning=FALSE}
+colnames(data)[colnames(data) == "bathrooms_text"] <- "bathrooms"
+colnames(data)[colnames(data) == "host_location"] <- "city"
+colnames(data)[colnames(data) == "host_neighbourhood"] <- "neighbourhood"
+```
+
+```{r, message=FALSE, warning=FALSE}
+data$host_acceptance_rate <- as.numeric(gsub("%", "", data$host_acceptance_rate)) / 100
+data$host_response_rate <- as.numeric(gsub("%", "", data$host_response_rate)) / 100
+data$bathrooms <- as.numeric(gsub(" .*", "", data$bathrooms))
+data$host_identity_verified <- as.integer(data$host_identity_verified == "t")
+data$host_is_superhost <- as.integer(data$host_is_superhost == "t")
+data$host_has_profile_pic <- as.integer(data$host_has_profile_pic == "t")
+data$has_availability <- as.integer(data$has_availability == "t")
+data$instant_bookable <- as.integer(data$instant_bookable == "t")
+data$price <- as.numeric(gsub("\\$", "", data$price))
+```
+```{r, message=FALSE, warning=FALSE}
+data <- na.omit(data)
+```
+
+```{r, message=FALSE, warning=FALSE}
+dim(data)
+```
+
+
+```{r, message=FALSE, warning=FALSE}
+corpus_airbnb = Corpus(VectorSource(data$amenities))
+```
+***Converting to lower case***
+```{r, message=FALSE, warning=FALSE}
+corpus_airbnb = tm_map(corpus_airbnb, content_transformer(tolower))
+```
+***Removing Punctuation***
+```{r, message=FALSE, warning=FALSE}
+corpus_airbnb = tm_map(corpus_airbnb, removePunctuation)
+```
+***Removing Stop Words***
+```{r, message=FALSE, warning=FALSE}
+corpus_airbnb = tm_map(corpus_airbnb, removeWords, stopwords("en"))
+```
+***Creating Document-Term Matrix***
+```{r, message=FALSE, warning=FALSE}
+dtm_airbnb = DocumentTermMatrix(corpus_airbnb)
+```
+***Removing Spare Terms***
+```{r, message=FALSE, warning=FALSE}
+sparse_airbnb = removeSparseTerms(dtm_airbnb, 0.97)
+```
+
+***Converting to Dataframe***
+```{r, message=FALSE, warning=FALSE}
+amenities_df = as.data.frame(as.matrix(sparse_airbnb))
+```
+***Amenities Dataset***
+```{r, message=FALSE, warning=FALSE}
+
+amenities_df$id = data$id
+```
+
+```{r, message=FALSE, warning=FALSE}
+dim(amenities_df)
