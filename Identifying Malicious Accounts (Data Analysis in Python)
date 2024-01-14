@@ -1,0 +1,94 @@
+pip install numpy
+pip install pandas
+pip install pyjanitor
+
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+import ipaddress as ip
+import os
+
+accounts_data = pd.read_csv('account_log_without_labels.csv')
+
+accounts_data['is_malicious'] = False
+
+accounts_data['campaign'] = ''
+
+accounts_data.head()
+
+accounts_data.tail()
+
+accounts_data.info()
+
+
+accounts_data.count()
+
+accounts_data.describe()
+
+
+# **Exploratory Data Analysis & Data Visualization**
+
+accounts_data['ip_address'].nunique()
+
+
+#### Number in name check ####
+
+def contains_number(string):
+    return any(char.isdigit() for char in string)
+
+
+accounts_data['is_malicious'] = [True if contains_number(m) else False for m in accounts_data['name']]
+accounts_data
+
+##### campaign marked as invalid name #######
+
+accounts_data['campaign'] = [ 'invalid name' if  m  else '' for m in accounts_data['is_malicious']]
+accounts_data
+
+
+####### check campaign marked as invalid name ######
+campaign_name_mark = accounts_data.campaign.value_counts()
+campaign_name_mark
+
+######### Malicious emails filter #######
+accounts_data['email'] = accounts_data['email'].astype(str)
+for all_emails in accounts_data.index:
+    email = str(accounts_data['email'][all_emails])
+    if bool(re.search(r'(\b[A-Za-z0-9-_.+]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b)', email)):
+          continue
+    else:
+        accounts_data['is_malicious'][all_emails]= True 
+        accounts_data['campaign'][all_emails]='Email not valid'
+email_filter = accounts_data.campaign.value_counts()
+email_filter
+
+
+##### IP Address validation #######
+
+accounts_data['ip_address'] = accounts_data['ip_address'].fillna(0)
+accounts_data['ip_address'] = accounts_data['ip_address'].astype(str)
+
+#Function to validate If ipaddress is valid or not.
+#Done, Tested and working fine. DONT MODIFY - KAVYA C
+def validate_ip_address(address):
+    try:
+        ip.ip_address(address)
+        return True
+    except ValueError:
+        return False
+
+validate_ip_address('0')        
+
+
+for column in accounts_data['ip_address']:
+  columnSeriesObj = accounts_data['ip_address']
+for value in columnSeriesObj.values:
+        isValid = validate_ip_address(value)
+        if not isValid:
+          accounts_data.loc[accounts_data["ip_address"]==value, "is_malicious"] = True
+          accounts_data.loc[accounts_data["ip_address"]==value, "campaign"] = "Invalid IP"   
+
+##### Dataframe only with malicious accounts identified
+scam_df = accounts_data.loc[accounts_data['is_malicious'] == True]
+scam_df
