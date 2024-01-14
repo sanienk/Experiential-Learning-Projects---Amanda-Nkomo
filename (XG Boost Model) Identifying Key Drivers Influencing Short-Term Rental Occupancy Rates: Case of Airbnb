@@ -1,0 +1,190 @@
+### LOADING DATA AND PACKAGES 
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+library(dplyr); library(ggplot2);library(tidyr); library(caret); library(caTools); library(randomForest); library(party);library(rpart);library(rpart.plot); library(xgboost)
+```
+
+
+```{r}
+library(readxl)
+airbnb.df <- read_excel("C:/Users/Capstone/AIRBNB_DATA/Cluster Analysis/airbnb.df.xlsx")
+amenities.df  <- read_excel("C:/Users/Capstone/AIRBNB_DATA/Cluster Analysis/amenities.df.xlsx")
+```
+
+### CONVERTING VARIABLES 
+```{r, message=FALSE, warning=FALSE}
+airbnb.df$city <- as.factor(airbnb.df$city)
+airbnb.df$host_response_time <- as.factor(airbnb.df$host_response_time)
+airbnb.df$host_has_profile_pic <- as.factor(airbnb.df$host_has_profile_pic)
+airbnb.df$host_identity_verified <- as.factor(airbnb.df$host_identity_verified)
+airbnb.df$host_is_superhost <-as.factor(airbnb.df$host_is_superhost)
+airbnb.df$room_type <- as.factor(airbnb.df$room_type)
+airbnb.df$bedrooms <- as.factor(airbnb.df$bedrooms)
+airbnb.df$beds <- as.factor(airbnb.df$beds)
+airbnb.df$bathrooms <- as.factor(airbnb.df$bathrooms)
+airbnb.df$accommodates <- as.factor(airbnb.df$accommodates)
+```
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+data <- cbind(airbnb.df, amenities.df)
+```
+
+### PRICE (Log)
+```{r}
+data <- data[data$price <= 750, ]
+data <- data[data$price >= 50, ]
+```
+```{r}
+data$log_price <- log(data$price)
+```
+
+### OCCUPANCY RATE (Percentage)
+
+```{r}
+data$occupancy_rate <- round(((30-data$availability_30)/30)*100,2)
+```
+
+#### Dimension Reduction (Excluding Variable Highly Correlated and not Significant to the Study)
+```{r}
+data <- data[, c("city","price","log_price","host_response_time","host_response_rate","host_acceptance_rate","host_is_superhost", "host_listings_count","host_has_profile_pic","host_identity_verified","room_type","accommodates","minimum_nights","number_of_reviews","review_scores_value","instant_bookable","reviews_per_month","amenities_count","essentials","kitchen","microwave","patio","refrigerator","video_games","wifi","cleaning","fan","fenced","furniture","glasses","laundromat","blinds","tables","wine","grill","firepit","utensils","fireplace","pool","pool","chairs","loungers","staff","occupancy_rate")]
+```
+
+
+### DATA PARTITIONING
+```{r}
+set.seed(123)
+spl = sample.split(data$occupancy_rate, SplitRatio = 0.7)
+Train = subset(data, spl==TRUE)
+Train = Train[,3:ncol(Train)]
+Test = subset(data, spl==FALSE)
+Test = Test[,3:ncol(Test)]
+```
+
+# MODEL FORMULATION
+
+#### Convert data to DMatrix format (XGBoost's internal data format)
+```{r, warning=FALSE, message=FALSE}
+Train[] <- lapply(Train, as.numeric)
+Test[] <- lapply(Test, as.numeric)
+dtrain <- xgb.DMatrix(data = as.matrix(Train[, -ncol(Train)]), label = Train$occupancy_rate)
+dtest <- xgb.DMatrix(data = as.matrix(Test[, -ncol(Test)]), label = Test$occupancy_rate)
+```
+
+
+
+```{r, message=FALSE, warning=FALSE}
+params <- list(
+  objective = "reg:squarederror",  
+  eval_metric = "rmse",            
+  max_depth = 6,                  
+  eta = 0.3,                    
+  subsample = 0.8,                  
+  colsample_bytree = 0.8            
+)
+```
+
+```{r, echo=FALSE}
+watchlist <- list(train = dtrain, test = dtest)
+```
+
+
+#### Model
+```{r, message=FALSE, warning=FALSE}
+model <- xgb.train(params, dtrain, nrounds = 100, watchlist = watchlist, early_stopping_rounds = 10)
+```
+
+#### Predictions
+```{r, message=FALSE, warning=FALSE}
+predictions <- predict(model, newdata = as.matrix(Test[, -ncol(Test)]))
+```
+```{r, message=FALSE, warning=FALSE}
+Test$PredictXG <- predictions
+```
+
+```{r, message=FALSE, warning=FALSE}
+residuals <-  Test$occupancy_rate - Test$PredictXG
+hist(residuals, breaks = "FD", main="Distribution of Residuals", xlab="Occupancy Rates", col = 'red')
+```
+
+```{r}
+summary(Test$PredictXG)
+```
+
+#### Feature Importance
+```{r, message=FALSE, warning=FALSE}
+importance_matrix <- xgb.importance(model = model)
+print(importance_matrix)
+```
+
+#### MODEL EVALUATION
+
+***Mean Squared Error (MSE)***
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+mse_XG <- mean((Test$occupancy_rate - Test$PredictXG)^2)
+```
+```{r, echo=FALSE}
+cat("Mean Squared Error:", mse_XG , "\n")
+```
+
+***R-squared (R2)***
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+r2_XG <- 1 - (mse_XG / var(Test$occupancy_rate))
+```
+```{r, echo=FALSE}
+cat("R-squared:", r2_XG, "\n")
+```
+
+***Mean Absolute Error (MAE)***
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+mae_XG <- mean(abs(Test$occupancy_rate - Test$PredictXG))
+```
+```{r, echo=FALSE}
+cat("Mean Absolute Error:", mae_XG, "\n")
+```
+
+***Root Mean Squared Error (RMSE)***
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+rmse_XG <- sqrt(mse_XG)
+```
+```{r, echo=FALSE}
+cat("Root Mean Squared Error:", rmse_XG, "\n")
+```
+
+
+#### BASELINE PREDICTIONS 
+```{r, message=FALSE, warning=FALSE}
+mean_occupancy_rate <- mean(Train$occupancy_rate)
+baseline_pred <- rep(mean_occupancy_rate, nrow(Test))
+```
+
+***Mean Squared Error (MSE) BASELINE***
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+mse_baseline <- mean((Test$occupancy_rate - baseline_pred)^2)
+```
+```{r, echo=FALSE}
+cat("Mean Squared Error - Baseline Model:", mse_baseline, "\n")
+```
+
+***Mean Absolute Error (MAE) BASELINE***
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+mae_baseline <- mean(abs(Test$occupancy_rate - baseline_pred))
+```
+```{r, echo=FALSE}
+cat("Mean Absolute Error - Baseline Model:", mae_baseline, "\n")
+```
+
+***Root Mean Squared Error (RMSE) BASELINE***
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+rmse_baseline <- sqrt(mean((Test$occupancy_rate - baseline_pred)^2))
+```
+```{r, echo=FALSE}
+cat("Root Mean Squared Error - Baseline Model :", rmse_baseline, "\n")
+```
+
+***Mean Absolute Error (MAE) BASELINE***
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+mae_baseline <- mean(abs(Test$occupancy_rate - baseline_pred))
+```
+```{r, echo=FALSE}
+cat("Mean Absolute Error - Baseline Model:", mae_baseline, "\n")
+```
