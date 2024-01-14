@@ -1,0 +1,48 @@
+### LOADING DATA AND PACKAGES 
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+library(readxl);library(dplyr); library(ggplot2);library(tidyr);library(psych);library(GPArotation)
+```
+
+```{r, warning=FALSE, message=FALSE}
+efa.df <- read_excel("C:/Users/Capstone/AIRBNB_DATA/Cluster Analysis/EFA.df.xlsx")
+```
+
+```{r}
+dim(efa.df)
+```
+
+#### Variance and Correlation Analysis
+```{r, warning=FALSE, message=FALSE}
+variance_across_variables <- apply(efa.df, 2, var)
+```
+```{r, warning=FALSE, message=FALSE}
+correlation_matrix <- cor(efa.df)
+```
+
+
+### EXPLORATORY FACTOR ANALYSIS
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+efa_result <- fa(correlation_matrix, nfactors = 7, rotate = "varimax")
+```
+ 
+
+#### Determining Number of Factors (Kaiser-Guttman rule)
+***Identify factors with eigenvalues greater than 1***
+```{r, warning=FALSE, message=FALSE}
+eigenvalues <- efa_result$values
+selected_factors <- sum(eigenvalues > 1)
+cat("Number of factors to retain:", selected_factors, "\n")
+```
+
+```{r, warning=FALSE, message=FALSE}
+efa_result <- fa(correlation_matrix, nfactors = 7, rotate = "oblimin", fm = "pa")
+```
+
+
+```{r, warning=FALSE, message=FALSE}
+print(efa_result$loadings)
+```
+
+
+```{r, warning=FALSE, message=FALSE}
+summary(efa_result)
