@@ -1,0 +1,214 @@
+### LOADING DATA AND PACKAGES 
+```{r, message=FALSE, warning=FALSE}
+library(dplyr); library(ggplot2);library(tidyr);library(ggplot2);library(factoextra);library(stats); library(dendextend);library(cluster);library(gower)
+```
+
+```{r, message=FALSE, warning=FALSE}
+library(readxl)
+airbnb.df <- read_excel("C:/Users/Capstone/AIRBNB_DATA/Cluster Analysis/airbnb.df.xlsx")
+amenities.df  <- read_excel("C:/Users/Capstone/AIRBNB_DATA/Cluster Analysis/amenities.df.xlsx")
+```
+
+### COMBINING DATA
+```{r, message=FALSE, warning=FALSE}
+data <- cbind(airbnb.df,amenities.df)
+```
+### OCCUPANCY RATE (Percentage)
+
+```{r}
+data$occupancy_rate <- round(((30-data$availability_30)/30)*100,2)
+```
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+data <- data[, c("city","price","host_response_time","host_response_rate","host_acceptance_rate","host_is_superhost", "host_listings_count","host_has_profile_pic","host_identity_verified","host_verifications","room_type","minimum_nights","number_of_reviews","review_scores_value","instant_bookable","reviews_per_month","accommodates","bedrooms","bathrooms","beds","amenities_count","occupancy_rate")]
+```
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+data$id <- NULL
+data$id <- NULL
+data$host_id <- NULL
+data$host_name <- NULL
+data$availbility_30 <- NULL
+data$host_since <- NULL
+data$review_scores_rating <- NULL
+data$review_scores_accuracy <- NULL
+data$review_scores_cleanliness <- NULL
+data$review_scores_checkin <- NULL
+data$review_scores_location <- NULL
+data$review_scores_communication <- NULL
+data$availability_30 <- NULL
+data$maximum_nights <- NULL
+data$neighbourhood <- NULL
+```
+
+### CONVERTING VARIABLES (Factor/Categorical Variables)
+***Creating Dummies for Factor/Categorical Variables***
+```{r, message=FALSE, warning=FALSE}
+data$host_response_time <- as.factor(data$host_response_time)
+data$room_type <- as.factor(data$room_type)
+data$host_verifications <- as.factor(data$host_verifications)
+```
+
+```{r, echo=FALSE}
+data <- cbind(data, model.matrix(~ host_response_time + room_type + host_verifications + 0, data = data))
+```
+
+
+***Removing Original Categorical Variables***
+```{r, message=FALSE, warning=FALSE}
+data <- data[, !colnames(data) %in% c("host_response_time","room_type","host_verifications")]
+```
+
+
+### NORMALIZATION (Numerical Variables)
+```{r,echo=FALSE}
+selected_columns <- c(
+  "accommodates",
+  "bedrooms",
+  "bathrooms",
+  "beds",
+  "occupancy_rate",
+  "review_scores_value",
+  "number_of_reviews",
+  "host_listings_count",
+  "host_response_rate",
+  "host_acceptance_rate",
+  "price",
+  "minimum_nights",
+  "reviews_per_month",
+  "amenities_count"
+)
+```
+
+```{r, message=FALSE, warning=FALSE}
+numerical_cols <- sapply(data[, selected_columns, drop = FALSE], is.numeric)
+numerical_data <- data[, c(selected_columns[numerical_cols]), drop = FALSE]
+numerical_data_normalized <- scale(numerical_data)
+```
+```{r, message=FALSE, warning=FALSE}
+data_normalized <- cbind(data[, setdiff(names(data), selected_columns), drop = FALSE], numerical_data_normalized)
+```
+
+
+### CLUSTER ANALYSIS FORMULATION
+
+***Distance Metrics***
+```{r, warning=FALSE, message=FALSE}
+dist_matrix <- dist(data_normalized, method = "euclidean")
+```
+
+***Clustering Method***
+```{r, warning=FALSE, message=FALSE}
+hclust_result <- hclust(dist_matrix, method="ward.D")
+```
+
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+plot(hclust_result, main = "Hierarchical Clustering Dendrogram", cex = 0.6, hang = -1)
+```
+***Cutting  tree into k clusters***
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+height <- 3000
+clusters <- cutree(hclust_result, h = height)
+clustered_data <- data.frame(Cluster = clusters, Other_Variables = data_normalized)
+cat("Number of clusters:", max(clusters), "\n")
+```
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+num.cluster = 3
+clusters = cutree(hclust_result, k = num.cluster)
+plot(hclust_result, main= "Dendrogram")
+rect.hclust(hclust_result, k = num.cluster, border = 2:4)
+```
+
+
+### ANALYSIS OF CLUSTERS
+***Silhouette Score***
+
+```{r, warning = FALSE, message=FALSE, echo=FALSE}
+silhouette_score <- silhouette(clusters, dist(data_normalized))
+
+cat("Silhouette Score:", mean(silhouette_score[, 3]), "\n")
+```
+
+***Cluster Sizes***
+```{r, echo=FALSE}
+table(clusters)
+```
+
+***Cluster Means***
+```{r,echo=FALSE}
+data$cluster <- clusters
+```
+
+***Occupancy Rate***
+```{r}
+occupancy_rate <- aggregate(occupancy_rate ~ cluster, data, mean)
+print(occupancy_rate)
+```
+
+***Price***
+```{r}
+price <- aggregate(price ~ cluster, data, mean)
+print(price)
+```
+***Capacity(Accomodates)***
+```{r}
+capacity <- aggregate(accommodates ~ cluster, data, mean)
+print(capacity)
+```
+
+
+***Reviews Per Month***
+```{r}
+reviews <- aggregate(reviews_per_month ~ cluster, data, mean)
+print(reviews)
+```
+
+
+***Total Reviews***
+```{r}
+review_score <- aggregate(number_of_reviews ~ cluster, data, mean)
+print(review_score)
+```
+
+
+***CLUSTER PROFILING***
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+num_clusters <- 3
+clusters <- cutree(hclust_result, num_clusters)
+clustered_data <- cbind(data, Cluster = clusters)
+```
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+summary_by_cluster <- clustered_data %>%
+  group_by(Cluster) %>%
+  summarise_all(funs(mean))
+```
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+#summary_by_cluster <- summary_by_cluster %>%
+#mutate_all(round, digits = 0)
+#for (i in 1:num_clusters) {
+  #cat("Cluster", i, ":\n")
+  #features_in_cluster <- names(summary_by_cluster)[!grepl("Cluster", names(summary_by_cluster))]
+  #for (feature in features_in_cluster) {
+    #cat(paste("  -", feature, ":", summary_by_cluster[i, feature], "\n"))
+  #}
+  #cat("\n")
+#}
+```
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+library(pheatmap)
+cut_tree <- cutree(hclust_result, k = 3)  
+clustered_data <- cbind(data, cluster = cut_tree)
+numeric_data <- clustered_data[, sapply(clustered_data, is.numeric)]
+cluster_means <- aggregate(. ~ cluster, data = numeric_data, mean)
+heatmap_data <- cluster_means[, -c(1, ncol(cluster_means))]
+pheatmap(
+  heatmap_data,
+  cluster_rows = TRUE,  
+  cluster_cols = FALSE, 
+  scale = "column",
+  main = "Cluster Profiles"
+)
+```
